@@ -71,7 +71,7 @@ cd HomeRecoEngine
 # Create virtual environment and install dependencies
 uv venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
-uv pip install -r pyproject.toml
+uv sync
 ```
 
 ### Step 3: Start Milvus (Using Official Docker Compose)
@@ -136,10 +136,10 @@ export HF_ENDPOINT=https://hf-mirror.com
 
 ```bash
 # Start the API server
-python api/app.py
+uv run python -m api.app
 
 # Or with debug mode
-python api/app.py --debug
+uv run python -m api.app --debug
 
 # The API will be available at http://localhost:7001
 # Swagger UI: http://localhost:7001/docs

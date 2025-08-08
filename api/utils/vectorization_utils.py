@@ -65,58 +65,8 @@ class VectorizationUtils:
             return [0.0] * 1024
     
     def _combine_semantic_fields(self, house_data: Dict[str, Any]) -> str:
-        """
-        合并语义字段为单一文本
-        
-        Args:
-            house_data: 房源数据字典
-            
-        Returns:
-            合并后的语义文本
-        """
-        semantic_fields = [
-            ('xqtd', '小区特点'),
-            ('xqmd', '小区卖点'), 
-            ('xq', '学区'),
-            ('xqph', '小区偏好'),
-            ('zb', '周边环境'),
-            ('fyb', '房源标签'),
-            ('fyhx', '房源户型')
-        ]
-        
-        text_parts = []
-        
-        # 添加基本信息作为语义背景
-        if house_data.get('xqmc'):
-            if isinstance(house_data['xqmc'], list):
-                text_parts.append(f"小区：{', '.join(house_data['xqmc'])}")
-            else:
-                text_parts.append(f"小区：{house_data['xqmc']}")
-        
-        if house_data.get('qy'):
-            text_parts.append(f"区域：{house_data['qy']}")
-            
-        if house_data.get('mj'):
-            # 处理面积字段，提取数值
-            area_text = str(house_data['mj'])
-            if '平方米' in area_text:
-                area_text = area_text.replace('平方米', '')
-            text_parts.append(f"面积：{area_text}平方米")
-        
-        # 添加语义字段
-        for field_key, field_name in semantic_fields:
-            value = house_data.get(field_key)
-            if value and str(value).strip() and str(value) != 'nan':
-                text_parts.append(f"{field_name}：{value}")
-        
-        # 添加用户查询文本（如果有）
-        if house_data.get('user_query_text'):
-            text_parts.append(f"用户需求：{house_data['user_query_text']}")
-        
-        combined_text = "。".join(text_parts)
-        logger.debug(f"合并语义文本: {combined_text[:200]}...")
-        
-        return combined_text
+        """仅使用 semantic_str 作为语义文本，不做任何兜底拼接。"""
+        return str(house_data.get('semantic_str') or '').strip()
     
     def create_query_vector(self, query_text: str) -> Optional[List[float]]:
         """

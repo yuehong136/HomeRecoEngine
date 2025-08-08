@@ -6,6 +6,8 @@ import pandas as pd
 import logging
 from typing import List, Dict, Any, Optional
 import re
+import os
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -16,31 +18,54 @@ class DataImportService:
     # 字段映射关系（Excel中文字段名 -> Milvus英文字段名）
     FIELD_MAPPING = {
         '主键': 'id',
-        '名称': 'xqmc',      # 小区名称
-        '区县': 'qy',        # 区域  
-        '地址': 'dz',        # 地址
-        '经度': 'jd',        # 经度
-        '纬度': 'wd',        # 纬度
-        '产权年限': 'cqnx',  # 产权年限
-        '绿化率': 'lhl',      # 绿化率
-        '容积率': 'rjl',      # 容积率
-        '装修风格': 'zxfg',   # 装修风格
-        '装修情况': 'zxqk',   # 装修情况
-        '水电': 'sd',         # 水电
-        '有无电梯': 'ywdt',   # 有无电梯
-        '面积': 'mj',         # 面积
-        '朝向': 'cx',         # 朝向
-        '单价': 'dj',         # 单价
-        '总价': 'zj',         # 总价
-        '物业费': 'wyf',       # 物业费
-        '楼层': 'lc',         # 楼层
-        '小区特点': 'xqtd',   # 小区特点
-        '学区': 'xq',         # 学区
-        '小区卖点': 'xqmd',   # 小区卖点
-        '偏好': 'xqph',       # 小区偏好
-        '房源标签': 'fyb',    # 房源标签
-        '房源户型': 'fyhx',   # 房源户型
-        '周边': 'zb'          # 周边环境
+        '房源分类': 'category',
+        '名称': 'name',
+        '区县': 'region',
+        '区域': 'region',  # 添加区域字段映射
+        '地址': 'address',
+        '最小面积': 'min_area',
+        '最大面积': 'max_area',
+        '最小单价': 'min_unit_price',
+        '最大单价': 'max_unit_price',
+        '最小总价': 'min_total_price',
+        '最大总价': 'max_total_price',
+        '租金': 'rent',
+        '经度': 'longitude',
+        '纬度': 'latitude',
+        '房源类型': 'type',
+        '建成年代': 'year_completion',
+        '交易权属': 'transaction_ownership',
+        '产权年限': 'property_right_duration',
+        '车位比': 'parking_space_ratio',
+        '物业公司': 'management_company',
+        '物业费': 'management_fee',
+        '开发商': 'developer',
+        '绿化率': 'greening_rate',
+        '容积率': 'plot_ratio',
+        '装修风格': 'decoration_style',
+        '装修情况': 'decoration_status',
+        '水电': 'water_electricity',
+        '有无电梯': 'has_elevator',
+        '有无车位': 'has_parking',
+        '朝向': 'orientation',
+        '房屋年限': 'building_age',
+        '家具设施': 'furniture_facilities',
+        '楼层': 'floor',
+        '租赁模式': 'rental_mode',
+        '付款方式': 'payment_method',
+        '租期': 'lease_term',
+        '偏好与标签': 'preferences_tags',
+        '偏好': 'preferences_tags',  # 添加偏好字段映射
+        '房源标签': 'property_tags',  # 添加房源标签字段映射
+        '房源户型': 'property_type',  # 添加房源户型字段映射
+        '面积': 'area',  # 添加面积字段映射
+        '单价': 'unit_price',  # 添加单价字段映射
+        '总价': 'total_price',  # 添加总价字段映射
+        '学区': 'school_district',  # 添加学区字段映射
+        '小区特点': 'community_features',  # 添加小区特点字段映射
+        '小区卖点': 'community_highlights',  # 添加小区卖点字段映射
+        '周边': 'surrounding_area',  # 添加周边字段映射
+        '语义字符': 'semantic_str',
     }
     
     def __init__(self, house_reco_service):
@@ -63,8 +88,8 @@ class DataImportService:
             导入是否成功
         """
         try:
-            # 读取TSV文件（实际上是制表符分隔的文本文件）
-            df = pd.read_csv(excel_path, sep='\t', encoding='utf-8')
+            # 读取文件（支持 xlsx/xls/tsv/txt/csv）
+            df = self._read_dataframe(excel_path)
             
             logger.info(f"读取到 {len(df)} 条原始数据")
             
@@ -116,8 +141,8 @@ class DataImportService:
             预览数据列表
         """
         try:
-            # 读取TSV文件
-            df = pd.read_csv(excel_path, sep='\t', encoding='utf-8')
+            # 读取文件
+            df = self._read_dataframe(excel_path)
             
             # 处理重复主键：保留最后一条记录
             if '主键' in df.columns:
@@ -165,29 +190,43 @@ class DataImportService:
                         else:
                             house_data[english_field] = value
                 
-                # 添加用户查询文本字段（空值）
-                house_data['user_query_text'] = ''
-                
-                # 添加房屋年限字段（默认值）
-                house_data['fwnx'] = 0
-                
-                # 添加有无车位字段（默认值）
-                house_data['ywcw'] = ''
-                
-                # 特殊处理：小区名称可能有多个，用逗号分隔
-                if 'xqmc' in house_data and house_data['xqmc']:
-                    xqmc_value = str(house_data['xqmc'])
-                    if ',' in xqmc_value:
-                        # 已经是用逗号分隔的格式
-                        house_data['xqmc'] = xqmc_value
-                    else:
-                        # 单个小区名称
-                        house_data['xqmc'] = xqmc_value
-                
-                # 数据验证：确保主键存在
+                # 主键：若缺失则按关键字段生成稳定主键
                 if not house_data.get('id'):
-                    logger.warning(f"第{index+1}行数据缺少主键，跳过")
+                    key_parts = [
+                        str(house_data.get('category', '')),
+                        str(house_data.get('name', '')),
+                        str(house_data.get('region', '')),
+                        str(house_data.get('address', '')),
+                        str(house_data.get('longitude', '')),
+                        str(house_data.get('latitude', '')),
+                    ]
+                    raw_key = '|'.join(key_parts)
+                    house_data['id'] = hashlib.md5(raw_key.encode('utf-8')).hexdigest()
+
+                # 核心必填字段校验（除 id 外）
+                core_required_keys = ['name', 'region', 'address', 'longitude', 'latitude']
+                missing_core = [k for k in core_required_keys if pd.isna(house_data.get(k)) or house_data.get(k) in [None, '']]
+                if missing_core:
+                    logger.warning(f"第{index+1}行数据缺少核心必填字段{missing_core}，已跳过")
                     continue
+                
+                # 为可选字段生成默认值
+                if pd.isna(house_data.get('category')) or house_data.get('category') in [None, '']:
+                    # 根据其他信息推断房源分类，默认为"住宅"
+                    house_data['category'] = '住宅'
+                    logger.debug(f"第{index+1}行数据缺失房源分类，设为默认值: 住宅")
+                
+                if pd.isna(house_data.get('semantic_str')) or house_data.get('semantic_str') in [None, '']:
+                    # 生成语义字符串，组合主要特征
+                    semantic_parts = []
+                    if house_data.get('name'): semantic_parts.append(str(house_data['name']))
+                    if house_data.get('region'): semantic_parts.append(str(house_data['region']))
+                    if house_data.get('address'): semantic_parts.append(str(house_data['address']))
+                    if house_data.get('area'): semantic_parts.append(f"面积{house_data['area']}")
+                    if house_data.get('unit_price'): semantic_parts.append(f"单价{house_data['unit_price']}")
+                    
+                    house_data['semantic_str'] = ' '.join(semantic_parts) if semantic_parts else f"{house_data.get('name', '房源')} {house_data.get('region', '')} {house_data.get('address', '')}"
+                    logger.debug(f"第{index+1}行数据缺失语义字符，已生成: {house_data['semantic_str'][:50]}...")
                 
                 house_data_list.append(house_data)
                 
@@ -208,6 +247,100 @@ class DataImportService:
             字段映射字典
         """
         return self.FIELD_MAPPING.copy()
+
+    def _detect_file_format(self, file_path: str) -> str:
+        """通过文件头检测真实的文件格式"""
+        try:
+            with open(file_path, 'rb') as f:
+                header = f.read(8)
+            
+            # Excel 2007+ (.xlsx) - ZIP 文件头
+            if header.startswith(b'PK\x03\x04'):
+                return 'xlsx'
+            # Excel 97-2003 (.xls) - OLE 文件头
+            elif header.startswith(b'\xd0\xcf\x11\xe0'):
+                return 'xls'
+            # CSV/TSV 文本文件 (尝试解码为文本)
+            else:
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        first_line = f.readline()
+                    if '\t' in first_line:
+                        return 'tsv'
+                    elif ',' in first_line:
+                        return 'csv'
+                    else:
+                        return 'txt'
+                except:
+                    return 'unknown'
+        except Exception:
+            return 'unknown'
+
+    def _read_dataframe(self, file_path: str) -> pd.DataFrame:
+        """根据扩展名和文件内容读取 DataFrame，支持 xlsx/xls/tsv/txt/csv。"""
+        
+        # 检查文件是否存在
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"文件不存在: {file_path}")
+        
+        # 检查文件大小
+        if os.path.getsize(file_path) == 0:
+            raise ValueError("文件为空")
+        
+        # 获取文件扩展名
+        _, ext = os.path.splitext(file_path.lower())
+        
+        # 检测真实文件格式
+        detected_format = self._detect_file_format(file_path)
+        
+        # 如果扩展名和实际格式不匹配，给出警告并使用检测到的格式
+        if ext == '.xlsx' and detected_format != 'xlsx':
+            logger.warning(f"文件 {file_path} 扩展名为 .xlsx 但实际格式为 {detected_format}")
+        elif ext == '.xls' and detected_format != 'xls':
+            logger.warning(f"文件 {file_path} 扩展名为 .xls 但实际格式为 {detected_format}")
+        
+        # 根据检测到的格式读取文件
+        if detected_format == 'xlsx':
+            try:
+                return pd.read_excel(file_path, engine='openpyxl')
+            except Exception as e:
+                raise ValueError(f"无法读取 .xlsx 文件 '{file_path}': {str(e)}. 请确保文件格式正确且未损坏。")
+        
+        elif detected_format == 'xls':
+            try:
+                return pd.read_excel(file_path, engine='xlrd')
+            except Exception as e:
+                raise ValueError(f"无法读取 .xls 文件 '{file_path}': {str(e)}. 请确保文件格式正确且未损坏。")
+        
+        elif detected_format == 'tsv':
+            try:
+                return pd.read_csv(file_path, sep='\t', encoding='utf-8')
+            except Exception as e:
+                raise ValueError(f"无法读取 TSV 文件 '{file_path}': {str(e)}")
+        
+        elif detected_format == 'csv':
+            try:
+                return pd.read_csv(file_path, encoding='utf-8')
+            except Exception as e:
+                raise ValueError(f"无法读取 CSV 文件 '{file_path}': {str(e)}")
+        
+        else:
+            # 最后的尝试 - 按原扩展名处理
+            if ext in ['.xlsx', '.xls']:
+                try:
+                    engine = 'openpyxl' if ext == '.xlsx' else 'xlrd'
+                    return pd.read_excel(file_path, engine=engine)
+                except Exception as e:
+                    raise ValueError(f"文件 '{file_path}' 格式无法识别或已损坏: {str(e)}. 请检查文件是否为有效的 Excel 文件。")
+            
+            # 尝试作为文本文件读取
+            try:
+                return pd.read_csv(file_path, encoding='utf-8')
+            except Exception:
+                try:
+                    return pd.read_csv(file_path, sep='\t', encoding='utf-8')
+                except Exception as e:
+                    raise ValueError(f"无法识别文件格式: {file_path}. 支持的格式: .xlsx, .xls, .csv, .tsv, .txt. 错误: {str(e)}")
     
     def validate_excel_file(self, excel_path: str) -> Dict[str, Any]:
         """
@@ -221,7 +354,7 @@ class DataImportService:
         """
         try:
             # 读取文件
-            df = pd.read_csv(excel_path, sep='\t', encoding='utf-8')
+            df = self._read_dataframe(excel_path)
             
             validation_result = {
                 'valid': True,
@@ -232,19 +365,45 @@ class DataImportService:
                 'errors': []
             }
             
-            # 检查必需字段
-            required_fields = ['主键', '名称', '区县']
-            for field in required_fields:
-                if field not in df.columns:
-                    validation_result['missing_fields'].append(field)
+            # 检查必需字段（主键可选，缺失自动生成）
+            # 对于某些字段，可以有替代字段名
+            required_field_alternatives = {
+                '名称': ['名称', 'name'],
+                '区域': ['区域', '区县'],  # 区域和区县可以互相替代
+                '地址': ['地址', 'address'],
+                '经度': ['经度', 'longitude'],
+                '纬度': ['纬度', 'latitude']
+            }
+            
+            # 可选字段（如果缺失会自动生成或使用默认值）
+            optional_field_alternatives = {
+                '房源分类': ['房源分类', 'category'],  # 可以从其他信息推断
+                '语义字符': ['语义字符', 'semantic_str']  # 可以从其他字段生成
+            }
+            
+            for required_field, alternatives in required_field_alternatives.items():
+                # 检查是否有任一替代字段存在
+                if not any(alt in df.columns for alt in alternatives):
+                    validation_result['missing_fields'].append(required_field)
                     validation_result['valid'] = False
             
-            # 检查额外字段
+            # 检查可选字段的缺失情况（仅记录警告，不影响valid状态）
+            missing_optional_fields = []
+            for optional_field, alternatives in optional_field_alternatives.items():
+                if not any(alt in df.columns for alt in alternatives):
+                    missing_optional_fields.append(optional_field)
+            
+            if missing_optional_fields:
+                validation_result['warnings'] = [f"缺失可选字段: {', '.join(missing_optional_fields)}，将自动生成默认值"]
+            
+            # 检查额外字段（现在更宽松，只记录但不报错）
             expected_fields = set(self.FIELD_MAPPING.keys())
             actual_fields = set(df.columns)
             extra_fields = actual_fields - expected_fields
             if extra_fields:
                 validation_result['extra_fields'] = list(extra_fields)
+                # 不再因为额外字段而标记为无效
+                # validation_result['valid'] = False
             
             # 检查数据质量
             if validation_result['valid']:

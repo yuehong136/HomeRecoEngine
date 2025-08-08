@@ -5,8 +5,9 @@
 import logging
 import math
 from typing import Dict, List, Optional, Any, Union
-from pymilvus import MilvusClient, DataType
+from pymilvus import MilvusClient, DataType, Function, FunctionType, WeightedRanker, AnnSearchRequest
 from pymilvus.milvus_client.index import IndexParams
+
 from api.utils.vectorization_utils import get_vectorization_utils
 
 logger = logging.getLogger(__name__)
@@ -30,10 +31,24 @@ class HouseRecoService:
         """
         self.client = milvus_client
         self.vectorization_utils = get_vectorization_utils()
+
+    def _build_milvus_search_params(self, confidence: Optional[float]) -> Dict[str, Any]:
+        """构建 Milvus search_params，将 confidence 作为底层阈值传入。
+        说明：具体可用参数取决于索引/度量类型；此处设置 metric_type，并在提供置信度时附带阈值。
+        """
+        params: Dict[str, Any] = {"metric_type": "COSINE"}
+        try:
+            if confidence is not None:
+                params["params"] = {"radius": float(confidence)}
+        except Exception:
+            pass
+        return params
         
     def create_collection_schema(self):
         """创建房源推荐集合的schema"""
-        
+        analyzer_params = {
+            "type": "chinese",
+        }
         # 创建schema
         schema = self.client.create_schema(
             auto_id=False,
@@ -41,233 +56,66 @@ class HouseRecoService:
             description="房源推荐集合"
         )
         
-        # 主键字段
+        # 主键字段（字符串主键）
         schema.add_field(
             field_name="id",
-            datatype=DataType.INT64,
+            datatype=DataType.VARCHAR,
+            max_length=128,
             is_primary=True,
-            description="房源主键ID"
+            description="房源主键ID（字符串）"
         )
         
-        # ========== 过滤字段 ==========
-        
-        # 小区名称（多个）- 支持数组查询
+        # 房源分类（1-新房，2-二手房，3-出租房）
         schema.add_field(
-            field_name="xqmc",  # 小区名称
-            datatype=DataType.ARRAY,
-            element_type=DataType.VARCHAR,
-            max_capacity=10,  # 最多10个小区名称
-            max_length=100,
-            description="小区名称列表"
-        )
-        
-        # 区域
-        schema.add_field(
-            field_name="qy",  # 区域
-            datatype=DataType.VARCHAR,
-            max_length=50,
-            description="区域"
-        )
-        
-        # 地址
-        schema.add_field(
-            field_name="dz",  # 地址
-            datatype=DataType.VARCHAR,
-            max_length=200,
-            description="详细地址"
-        )
-        
-        # 经度
-        schema.add_field(
-            field_name="jd",  # 经度
-            datatype=DataType.DOUBLE,
-            description="经度"
-        )
-        
-        # 纬度
-        schema.add_field(
-            field_name="wd",  # 纬度
-            datatype=DataType.DOUBLE,
-            description="纬度"
-        )
-        
-        # 产权年限
-        schema.add_field(
-            field_name="cqnx",  # 产权年限
+            field_name="category",
             datatype=DataType.INT64,
-            description="产权年限"
+            description="房源分类：1-新房，2-二手房，3-出租房"
         )
-        
-        # 绿化率 (存储为百分比数值，如41.5表示41.5%)
-        schema.add_field(
-            field_name="lhl",  # 绿化率
-            datatype=DataType.DOUBLE,
-            description="绿化率百分比"
-        )
-        
-        # 容积率
-        schema.add_field(
-            field_name="rjl",  # 容积率
-            datatype=DataType.DOUBLE,
-            description="容积率"
-        )
-        
-        # 装修风格
-        schema.add_field(
-            field_name="zxfg",  # 装修风格
-            datatype=DataType.VARCHAR,
-            max_length=50,
-            description="装修风格"
-        )
-        
-        # 装修情况
-        schema.add_field(
-            field_name="zxqk",  # 装修情况
-            datatype=DataType.VARCHAR,
-            max_length=50,
-            description="装修情况"
-        )
-        
-        # 水电情况
-        schema.add_field(
-            field_name="sd",  # 水电
-            datatype=DataType.VARCHAR,
-            max_length=100,
-            description="水电情况"
-        )
-        
-        # 有无电梯
-        schema.add_field(
-            field_name="ywdt",  # 有无电梯
-            datatype=DataType.VARCHAR,
-            max_length=10,
-            description="有无电梯"
-        )
-        
-        # 有无车位
-        schema.add_field(
-            field_name="ywcw",  # 有无车位
-            datatype=DataType.VARCHAR,
-            max_length=10,
-            description="有无车位"
-        )
-        
-        # 面积 (单位：平方米)
-        schema.add_field(
-            field_name="mj",  # 面积
-            datatype=DataType.DOUBLE,
-            description="面积平方米"
-        )
-        
-        # 朝向
-        schema.add_field(
-            field_name="cx",  # 朝向
-            datatype=DataType.VARCHAR,
-            max_length=20,
-            description="朝向"
-        )
-        
-        # 单价 (元/平方米)
-        schema.add_field(
-            field_name="dj",  # 单价
-            datatype=DataType.DOUBLE,
-            description="单价元每平方米"
-        )
-        
-        # 总价 (万元)
-        schema.add_field(
-            field_name="zj",  # 总价
-            datatype=DataType.DOUBLE,
-            description="总价万元"
-        )
-        
-        # 物业费 (元/m²/月)
-        schema.add_field(
-            field_name="wyf",  # 物业费
-            datatype=DataType.DOUBLE,
-            description="物业费元每平方米每月"
-        )
-        
-        # 房屋年限
-        schema.add_field(
-            field_name="fwnx",  # 房屋年限
-            datatype=DataType.INT64,
-            description="房屋年限"
-        )
-        
-        # 楼层情况
-        schema.add_field(
-            field_name="lc",  # 楼层
-            datatype=DataType.VARCHAR,
-            max_length=20,
-            description="楼层情况"
-        )
-        
-        # ========== 语义字段 (存储原始文本，用于显示) ==========
-        
-        # 小区特点
-        schema.add_field(
-            field_name="xqtd",  # 小区特点
-            datatype=DataType.VARCHAR,
-            max_length=500,
-            description="小区特点"
-        )
-        
-        # 小区卖点
-        schema.add_field(
-            field_name="xqmd",  # 小区卖点
-            datatype=DataType.VARCHAR,
-            max_length=500,
-            description="小区卖点"
-        )
-        
-        # 学区
-        schema.add_field(
-            field_name="xq",  # 学区
-            datatype=DataType.VARCHAR,
-            max_length=200,
-            description="学区"
-        )
-        
-        # 小区偏好
-        schema.add_field(
-            field_name="xqph",  # 小区偏好
-            datatype=DataType.VARCHAR,
-            max_length=300,
-            description="小区偏好"
-        )
-        
-        # 周边环境
-        schema.add_field(
-            field_name="zb",  # 周边
-            datatype=DataType.VARCHAR,
-            max_length=2000,
-            description="周边环境"
-        )
-        
-        # 房源标签
-        schema.add_field(
-            field_name="fyb",  # 房源标签
-            datatype=DataType.VARCHAR,
-            max_length=200,
-            description="房源标签"
-        )
-        
-        # 房源户型
-        schema.add_field(
-            field_name="fyhx",  # 房源户型
-            datatype=DataType.VARCHAR,
-            max_length=50,
-            description="房源户型"
-        )
-        
-        # 用户查询文本 (用于个性化推荐)
-        schema.add_field(
-            field_name="user_query_text",
-            datatype=DataType.VARCHAR,
-            max_length=500,
-            description="用户查询文本"
-        )
+
+        # 新字段：基础信息
+        schema.add_field(field_name="name", datatype=DataType.VARCHAR, max_length=200, description="房源名称")
+        schema.add_field(field_name="region", datatype=DataType.VARCHAR, max_length=100, description="区域")
+        schema.add_field(field_name="address", datatype=DataType.VARCHAR, max_length=300, description="地址")
+
+        # 新字段：范围数值
+        schema.add_field(field_name="min_area", datatype=DataType.DOUBLE, description="最小面积")
+        schema.add_field(field_name="max_area", datatype=DataType.DOUBLE, description="最大面积")
+        schema.add_field(field_name="min_unit_price", datatype=DataType.DOUBLE, description="最小单价")
+        schema.add_field(field_name="max_unit_price", datatype=DataType.DOUBLE, description="最大单价")
+        schema.add_field(field_name="min_total_price", datatype=DataType.DOUBLE, description="最小总价")
+        schema.add_field(field_name="max_total_price", datatype=DataType.DOUBLE, description="最大总价")
+        schema.add_field(field_name="rent", datatype=DataType.DOUBLE, description="租金")
+
+        # 新字段：地理坐标
+        schema.add_field(field_name="longitude", datatype=DataType.DOUBLE, description="经度")
+        schema.add_field(field_name="latitude", datatype=DataType.DOUBLE, description="纬度")
+
+        # 新字段：更多属性
+        schema.add_field(field_name="type", datatype=DataType.VARCHAR, max_length=50, description="房源类型")
+        schema.add_field(field_name="year_completion", datatype=DataType.VARCHAR, max_length=50, description="建成年代")
+        schema.add_field(field_name="transaction_ownership", datatype=DataType.VARCHAR, max_length=100, description="交易权属")
+        schema.add_field(field_name="property_right_duration", datatype=DataType.INT64, description="产权年限")
+        schema.add_field(field_name="parking_space_ratio", datatype=DataType.VARCHAR, max_length=50, description="车位比")
+        schema.add_field(field_name="management_company", datatype=DataType.VARCHAR, max_length=200, description="物业公司")
+        schema.add_field(field_name="management_fee", datatype=DataType.DOUBLE, description="物业费")
+        schema.add_field(field_name="developer", datatype=DataType.VARCHAR, max_length=200, description="开发商")
+        schema.add_field(field_name="greening_rate", datatype=DataType.DOUBLE, description="绿化率")
+        schema.add_field(field_name="plot_ratio", datatype=DataType.DOUBLE, description="容积率")
+        schema.add_field(field_name="decoration_style", datatype=DataType.VARCHAR, max_length=100, description="装修风格")
+        schema.add_field(field_name="decoration_status", datatype=DataType.VARCHAR, max_length=100, description="装修情况")
+        schema.add_field(field_name="water_electricity", datatype=DataType.VARCHAR, max_length=100, description="水电")
+        schema.add_field(field_name="has_elevator", datatype=DataType.VARCHAR, max_length=10, description="有无电梯")
+        schema.add_field(field_name="has_parking", datatype=DataType.VARCHAR, max_length=10, description="有无车位")
+        schema.add_field(field_name="orientation", datatype=DataType.VARCHAR, max_length=50, description="朝向")
+        schema.add_field(field_name="building_age", datatype=DataType.VARCHAR, max_length=50, description="房屋年限")
+        schema.add_field(field_name="furniture_facilities", datatype=DataType.VARCHAR, max_length=500, description="家具设施")
+        schema.add_field(field_name="floor", datatype=DataType.VARCHAR, max_length=50, description="楼层")
+        schema.add_field(field_name="rental_mode", datatype=DataType.VARCHAR, max_length=50, description="租赁模式")
+        schema.add_field(field_name="payment_method", datatype=DataType.VARCHAR, max_length=50, description="付款方式")
+        schema.add_field(field_name="lease_term", datatype=DataType.INT64, description="租期(月)")
+        schema.add_field(field_name="preferences_tags", datatype=DataType.VARCHAR, max_length=1000, description="偏好与标签")
+        schema.add_field(field_name="semantic_str", datatype=DataType.VARCHAR, max_length=3000, description="语义字符", enable_analyzer=True, analyzer_params=analyzer_params)
+        # 注意：删除了旧版字段（如 xqmc/qy/dz/jd/wd 等），仅保留新字段集合
         
         # ========== 向量字段 (单一语义向量) ==========
         
@@ -278,7 +126,20 @@ class HouseRecoService:
             dim=self.VECTOR_DIM,
             description="综合语义向量"
         )
-        
+        # 稀疏向量字段（用于BM25）
+        schema.add_field(field_name="sparse_vector", datatype=DataType.SPARSE_FLOAT_VECTOR, description="稀疏向量")
+
+        # 创建BM25函数
+        bm25_function_name = f"bm25_function"
+        bm25_function = Function(
+            name=bm25_function_name,
+            function_type=FunctionType.BM25,
+            input_field_names=["semantic_str"],
+            output_field_names="sparse_vector"
+        )
+        schema.add_function(bm25_function)
+
+
         return schema
     
     def create_collection(self) -> bool:
@@ -300,12 +161,24 @@ class HouseRecoService:
             # 创建索引参数
             index_params = IndexParams()
             
-            # 为向量字段创建索引
+            # 为稠密向量创建索引
             index_params.add_index(
                 field_name="semantic_vector",
                 index_type="HNSW",
                 metric_type="COSINE",
                 params={"M": 16, "efConstruction": 500}
+            )
+
+            # 为稀疏向量创建索引
+            index_params.add_index(
+                field_name="sparse_vector",
+                index_type="SPARSE_INVERTED_INDEX",
+                metric_type="BM25",
+                params={
+                    "inverted_index_algo": "DAAT_WAND",
+                    "bm25_k1": 1.5, 
+                    "bm25_b": 0.75
+                }
             )
             
             # 创建集合
@@ -364,122 +237,82 @@ class HouseRecoService:
             return False
     
     def _preprocess_house_data(self, house_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """
-        预处理单个房源数据
-        
-        Args:
-            house_data: 原始房源数据
-            
-        Returns:
-            预处理后的房源数据，失败返回None
-        """
+        """按最新字段规范预处理单个房源数据。"""
         try:
-            processed_data = {}
-            
-            # 处理主键（处理numpy类型）
-            id_raw = house_data.get('id', 0)
-            processed_data['id'] = int(id_raw.item() if hasattr(id_raw, 'item') else id_raw)
-            
-            # 处理小区名称（可能包含多个，用逗号分隔）
-            xqmc_raw = house_data.get('xqmc', '')
-            if isinstance(xqmc_raw, str) and ',' in xqmc_raw:
-                processed_data['xqmc'] = [name.strip() for name in xqmc_raw.split(',')]
-            elif isinstance(xqmc_raw, list):
-                processed_data['xqmc'] = xqmc_raw
-            else:
-                processed_data['xqmc'] = [str(xqmc_raw)] if xqmc_raw else []
-            
-            # 处理基本字符串字段
-            string_fields = ['qy', 'dz', 'zxfg', 'zxqk', 'sd', 'ywdt', 'ywcw', 'cx', 'lc', 
-                           'xqtd', 'xqmd', 'xq', 'xqph', 'zb', 'fyb', 'fyhx', 'user_query_text']
-            for field in string_fields:
-                value = house_data.get(field, '')
-                processed_data[field] = str(value) if value and str(value) != 'nan' else ''
-            
-            # 处理数值字段（安全转换，处理None值和numpy类型）
-            jd_raw = house_data.get('jd')
-            if jd_raw is not None:
-                processed_data['jd'] = float(jd_raw.item() if hasattr(jd_raw, 'item') else jd_raw)
-            else:
-                processed_data['jd'] = 0.0
-            
-            wd_raw = house_data.get('wd')
-            if wd_raw is not None:
-                processed_data['wd'] = float(wd_raw.item() if hasattr(wd_raw, 'item') else wd_raw)
-            else:
-                processed_data['wd'] = 0.0
-            
-            cqnx_raw = house_data.get('cqnx')
-            if cqnx_raw is not None:
-                processed_data['cqnx'] = int(cqnx_raw.item() if hasattr(cqnx_raw, 'item') else cqnx_raw)
-            else:
-                processed_data['cqnx'] = 0
-            
-            fwnx_raw = house_data.get('fwnx')
-            if fwnx_raw is not None:
-                processed_data['fwnx'] = int(fwnx_raw.item() if hasattr(fwnx_raw, 'item') else fwnx_raw)
-            else:
-                processed_data['fwnx'] = 0
-            
-            # 处理绿化率（去除%符号）
-            lhl_raw = house_data.get('lhl')
-            if lhl_raw is not None and isinstance(lhl_raw, str) and '%' in lhl_raw:
-                processed_data['lhl'] = float(lhl_raw.replace('%', ''))
-            elif lhl_raw is not None:
-                processed_data['lhl'] = float(lhl_raw.item() if hasattr(lhl_raw, 'item') else lhl_raw)
-            else:
-                processed_data['lhl'] = 0.0
-            
-            rjl_raw = house_data.get('rjl')
-            if rjl_raw is not None:
-                processed_data['rjl'] = float(rjl_raw.item() if hasattr(rjl_raw, 'item') else rjl_raw)
-            else:
-                processed_data['rjl'] = 0.0
-            
-            # 处理面积（去除"平方米"文字）
-            mj_raw = house_data.get('mj')
-            if mj_raw is not None and isinstance(mj_raw, str) and '平方米' in mj_raw:
-                mj_clean = mj_raw.replace('平方米', '').strip()
-                processed_data['mj'] = float(mj_clean) if mj_clean else 0.0
-            elif mj_raw is not None:
-                processed_data['mj'] = float(mj_raw.item() if hasattr(mj_raw, 'item') else mj_raw)
-            else:
-                processed_data['mj'] = 0.0
-            
-            # 处理价格字段（去除单位文字）
-            dj_raw = house_data.get('dj')
-            if dj_raw is not None and isinstance(dj_raw, str):
-                dj_clean = dj_raw.replace('元/平方米', '').replace('元', '').strip()
-                processed_data['dj'] = float(dj_clean) if dj_clean else 0.0
-            elif dj_raw is not None:
-                processed_data['dj'] = float(dj_raw.item() if hasattr(dj_raw, 'item') else dj_raw)
-            else:
-                processed_data['dj'] = 0.0
-                
-            zj_raw = house_data.get('zj')
-            if zj_raw is not None and isinstance(zj_raw, str):
-                zj_clean = zj_raw.replace('万元', '').strip()
-                processed_data['zj'] = float(zj_clean) if zj_clean else 0.0
-            elif zj_raw is not None:
-                processed_data['zj'] = float(zj_raw.item() if hasattr(zj_raw, 'item') else zj_raw)
-            else:
-                processed_data['zj'] = 0.0
-                
-            wyf_raw = house_data.get('wyf')
-            if wyf_raw is not None and isinstance(wyf_raw, str):
-                wyf_clean = wyf_raw.replace('元/m²/月', '').replace('元', '').strip()
-                processed_data['wyf'] = float(wyf_clean) if wyf_clean else 0.0
-            elif wyf_raw is not None:
-                processed_data['wyf'] = float(wyf_raw.item() if hasattr(wyf_raw, 'item') else wyf_raw)
-            else:
-                processed_data['wyf'] = 0.0
-            
+            processed_data: Dict[str, Any] = {}
+
+            def as_str(value: Any) -> str:
+                if value is None or str(value).strip() == '' or str(value) == 'nan':
+                    return ''
+                return str(value)
+
+            def as_int(value: Any) -> int:
+                try:
+                    if hasattr(value, 'item'):
+                        value = value.item()
+                    return int(value)
+                except Exception:
+                    return 0
+
+            def as_float(value: Any) -> float:
+                try:
+                    if value is None:
+                        return 0.0
+                    if isinstance(value, str):
+                        cleaned = (
+                            value.replace('万元', '')
+                            .replace('元/m²/月', '')
+                            .replace('元/平方米', '')
+                            .replace('元/月', '')
+                            .replace('元', '')
+                            .replace('%', '')
+                            .strip()
+                        )
+                        if cleaned == '':
+                            return 0.0
+                        return float(cleaned)
+                    if hasattr(value, 'item'):
+                        value = value.item()
+                    return float(value)
+                except Exception:
+                    return 0.0
+
+            # 必填
+            processed_data['id'] = as_str(house_data.get('id'))
+            processed_data['category'] = as_int(house_data.get('category'))
+            processed_data['name'] = as_str(house_data.get('name'))
+            processed_data['region'] = as_str(house_data.get('region'))
+            processed_data['address'] = as_str(house_data.get('address'))
+            processed_data['longitude'] = as_float(house_data.get('longitude'))
+            processed_data['latitude'] = as_float(house_data.get('latitude'))
+            processed_data['semantic_str'] = as_str(house_data.get('semantic_str'))
+
+            # 可选字符串
+            for key in [
+                'type', 'year_completion', 'transaction_ownership', 'parking_space_ratio',
+                'management_company', 'developer', 'decoration_style', 'decoration_status',
+                'water_electricity', 'has_elevator', 'has_parking', 'orientation', 'building_age',
+                'furniture_facilities', 'floor', 'rental_mode', 'payment_method', 'preferences_tags'
+            ]:
+                processed_data[key] = as_str(house_data.get(key))
+
+            # 数值范围
+            for key in [
+                'min_area', 'max_area', 'min_unit_price', 'max_unit_price', 'min_total_price',
+                'max_total_price', 'rent', 'greening_rate', 'plot_ratio', 'management_fee'
+            ]:
+                processed_data[key] = as_float(house_data.get(key))
+
+            # 整数
+            processed_data['property_right_duration'] = as_int(house_data.get('property_right_duration'))
+            processed_data['lease_term'] = as_int(house_data.get('lease_term'))
+
             # 生成语义向量
             semantic_vector = self.vectorization_utils.create_semantic_vector(processed_data)
             processed_data['semantic_vector'] = semantic_vector
-            
+
             return processed_data
-            
+
         except Exception as e:
             logger.error(f"预处理房源数据失败: {e}, 数据: {house_data}")
             return None
@@ -499,7 +332,7 @@ class HouseRecoService:
             
             for key, value in house_data.items():
                 # 跳过向量字段，避免返回给客户端
-                if key == 'semantic_vector':
+                if key in ('semantic_vector', 'sparse_vector'):
                     continue
                     
                 if hasattr(value, '__iter__') and not isinstance(value, (str, bytes)):
@@ -545,7 +378,7 @@ class HouseRecoService:
         
         for key, value in data.items():
             # 跳过向量字段
-            if key == 'semantic_vector':
+            if key in ('semantic_vector', 'sparse_vector'):
                 continue
                 
             try:
@@ -564,6 +397,21 @@ class HouseRecoService:
                     safe_data[key] = str(value)
         
         return safe_data
+
+    def _get_safe_output_fields(self) -> List[str]:
+        """返回输出字段白名单，排除向量/稀疏向量等内部字段。"""
+        # 可见字段（与schema一致，但排除向量字段）
+        return [
+            "id","category","name","region","address",
+            "min_area","max_area","min_unit_price","max_unit_price",
+            "min_total_price","max_total_price","rent",
+            "longitude","latitude","type","year_completion","transaction_ownership",
+            "property_right_duration","parking_space_ratio","management_company",
+            "management_fee","developer","greening_rate","plot_ratio","decoration_style",
+            "decoration_status","water_electricity","has_elevator","has_parking",
+            "orientation","building_age","furniture_facilities","floor","rental_mode",
+            "payment_method","lease_term","preferences_tags","semantic_str"
+        ]
     
     def search_houses(self, search_params: Dict[str, Any], limit: int = 10, offset: int = 0) -> List[Dict[str, Any]]:
         """
@@ -581,36 +429,126 @@ class HouseRecoService:
             # 构建过滤表达式
             filter_expr = self._build_filter_expression(search_params)
             
-            # 检查是否有语义查询
-            if search_params.get('user_query_text'):
-                # 执行语义搜索
-                query_vector = self.vectorization_utils.create_query_vector(search_params['user_query_text'])
-                
+            retrieval_type = (search_params.get('retrieval_type') or 'vector').lower()
+
+            # 语义查询文本
+            has_query_text = (search_params.get('user_query_text') or search_params.get('semantic_str')) is not None
+
+            if retrieval_type == 'vector' and has_query_text:
+                # 仅向量检索
+                query_text = search_params.get('user_query_text') or search_params.get('semantic_str')
+                query_vector = self.vectorization_utils.create_query_vector(query_text)
+                # 强制确保为 Python float 列表
+                try:
+                    query_vector = [float(x) for x in (query_vector or [])]
+                except Exception:
+                    pass
                 search_results = self.client.search(
                     collection_name=self.COLLECTION_NAME,
                     data=[query_vector],
                     filter=filter_expr if filter_expr else None,
                     limit=limit + offset,
-                    output_fields=["*"]
+                    output_fields=self._get_safe_output_fields(),
+                    search_params=self._build_milvus_search_params(search_params.get('confidence')),
+                    anns_field="semantic_vector"
                 )
-                
-                # 处理结果并应用offset
-                results = []
-                if search_results and len(search_results) > 0:
-                    for hit in search_results[0][offset:offset + limit]:
-                        house_data = hit['entity']
-                        house_data['similarity_score'] = hit['distance']
-                        # 序列化数据以避免protobuf类型问题
-                        serialized_data = self._serialize_house_data(house_data)
-                        results.append(serialized_data)
-                        
+            elif retrieval_type == 'bm25' and has_query_text:
+                # 仅BM25稀疏检索
+                query_text = search_params.get('user_query_text') or search_params.get('semantic_str')
+                search_results = self.client.search(
+                    collection_name=self.COLLECTION_NAME,
+                    data=[{"text": query_text}],
+                    filter=filter_expr if filter_expr else None,
+                    limit=limit + offset,
+                    output_fields=self._get_safe_output_fields(),
+                    search_params={"metric_type": "BM25"},
+                    anns_field="sparse_vector"
+                )
+            elif retrieval_type == 'hybrid' and has_query_text:
+                # 向量 + 稀疏（BM25）混合检索
+                query_text = search_params.get('user_query_text') or search_params.get('semantic_str')
+                query_vector = self.vectorization_utils.create_query_vector(query_text)
+
+                vector_req = AnnSearchRequest(
+                    data=[query_vector],
+                    anns_field="semantic_vector",
+                    param=self._build_milvus_search_params(search_params.get('confidence')),
+                    limit=limit + offset,
+                    expr=filter_expr or "",
+                )
+                bm25_req = AnnSearchRequest(
+                    data=[query_text],
+                    anns_field="sparse_vector",
+                    param={"metric_type": "BM25"},
+                    limit=limit + offset,
+                    expr=filter_expr or "",
+                )
+
+                # 选择排序器：强制使用 WeightedRanker
+                # if WeightedRanker is None:
+                #     raise RuntimeError("WeightedRanker 不可用，请升级 pymilvus 到支持 WeightedRanker 的版本")
+                hybrid_weights = search_params.get('hybrid_weights') or {}
+                # 兼容旧参数名
+                dense_weight = hybrid_weights.get('vector')
+                sparse_weight = hybrid_weights.get('bm25')
+
+                # 默认均分（未提供时）
+                if dense_weight is None:
+                    dense_weight = 0.5
+                if sparse_weight is None:
+                    sparse_weight = 0.5
+
+                # 归一化分数（若提供），不同版本可能命名不同，统一用布尔值
+                norm_score_flag = bool(hybrid_weights.get('norm_score', True))
+                # 确保权重为 float
+                dw = float(dense_weight)
+                sw = float(sparse_weight)
+
+                ranker = WeightedRanker(dw, sw, norm_score=norm_score_flag)  # type: ignore
+
+                try:
+                    search_results = self.client.hybrid_search(
+                        collection_name=self.COLLECTION_NAME,
+                        reqs=[vector_req, bm25_req],
+                        ranker=ranker,
+                        limit=limit + offset,
+                        output_fields=self._get_safe_output_fields(),
+                    )
+                except Exception as hybrid_ex:
+                    # 兼容：若环境未启用 BM25 Function 或稀疏向量输入格式不被支持，则回退为纯向量检索
+                    logger.warning(
+                        "混合检索失败，回退为向量检索: %s", hybrid_ex
+                    )
+                    search_results = self.client.search(
+                        collection_name=self.COLLECTION_NAME,
+                        data=[query_vector],
+                        filter=filter_expr if filter_expr else None,
+                        limit=limit + offset,
+                        output_fields=self._get_safe_output_fields(),
+                        search_params=self._build_milvus_search_params(search_params.get('confidence')),
+                        anns_field="semantic_vector"
+                    )
+            else:
+                search_results = None
+
+            # 处理结果并应用offset + 置信度阈值
+            results = []
+            if search_results and len(search_results) > 0:
+                for hit in search_results[0]:
+                    score = hit['distance']
+                    house_data = hit['entity']
+                    house_data['similarity_score'] = score
+                    serialized_data = self._serialize_house_data(house_data)
+                    results.append(serialized_data)
+                # 应用offset/limit裁剪
+                results = results[offset:offset + limit]
             else:
                 # 纯过滤查询
                 if filter_expr:
                     query_results = self.client.query(
                         collection_name=self.COLLECTION_NAME,
                         filter=filter_expr,
-                        output_fields=["*"],
+                        output_fields=self._get_safe_output_fields(),
                         limit=limit,
                         offset=offset
                     )
@@ -620,9 +558,13 @@ class HouseRecoService:
                     # 如果没有任何过滤条件，返回空结果
                     results = []
             
-            # 如果是圆形区域搜索，需要进行精确距离计算和过滤
+            # 如果是圆形区域搜索：使用 longitude/latitude 精确距离并按距离排序
             if search_params.get('location') and self._is_circle_search(search_params['location']):
                 results = self._apply_circle_distance_filter(results, search_params['location'], limit)
+            else:
+                # 无圆形距离排序时：若包含语义分数，可按分数降序
+                if results and 'similarity_score' in results[0]:
+                    results.sort(key=lambda x: x.get('similarity_score', 0.0), reverse=True)
             
             logger.info(f"搜索完成，返回 {len(results)} 条结果")
             return results
@@ -632,76 +574,114 @@ class HouseRecoService:
             return []
     
     def _build_filter_expression(self, search_params: Dict[str, Any]) -> Optional[str]:
-        """
-        构建过滤表达式
-        
-        Args:
-            search_params: 搜索参数字典
-            
-        Returns:
-            过滤表达式字符串，无过滤条件时返回None
-        """
-        conditions = []
-        
-        # 小区名称过滤（数组字段）
-        if search_params.get('xqmc'):
-            xqmc_list = search_params['xqmc']
-            if isinstance(xqmc_list, list) and xqmc_list:
-                # 使用数组包含查询
-                xqmc_conditions = []
-                for name in xqmc_list:
-                    xqmc_conditions.append(f'array_contains(xqmc, "{name}")')
-                conditions.append(f"({' OR '.join(xqmc_conditions)})")
-        
-        # 基本字符串字段过滤
-        string_fields = {
-            'qy': '区域',
-            'lc': '楼层',
-            'zxqk': '装修情况',
-            'cx': '朝向',
-            'ywdt': '有无电梯',
-            'ywcw': '有无车位'
-        }
-        
-        for field, _ in string_fields.items():
-            if search_params.get(field):
-                conditions.append(f'{field} == "{search_params[field]}"')
-        
-        # 价格范围过滤
-        if search_params.get('price_range'):
-            price_range = search_params['price_range']
-            if price_range.get('min_price') is not None:
-                conditions.append(f'zj >= {price_range["min_price"]}')
-            if price_range.get('max_price') is not None:
-                conditions.append(f'zj <= {price_range["max_price"]}')
-        
-        # 面积范围过滤
+        """根据新字段规范构建过滤表达式。"""
+        conditions: List[str] = []
+
+        # 分类
+        if 'category' in search_params and search_params['category'] is not None:
+            cat_val = search_params['category']
+            if isinstance(cat_val, (list, tuple, set)):
+                cats = [int(v) for v in cat_val]
+                if cats:
+                    conditions.append(f"category in {cats}")
+            else:
+                conditions.append(f"category == {int(cat_val)}")
+
+        # 名称
+        if search_params.get('name') is not None:
+            name_param = search_params['name']
+            if isinstance(name_param, list) and name_param:
+                names_join = ', '.join([f'"{n}"' for n in name_param])
+                conditions.append(f"name in [{names_join}]")
+            elif isinstance(name_param, str) and name_param:
+                conditions.append(f'name == "{name_param}"')
+
+        # 区域
+        if search_params.get('region'):
+            conditions.append(f'region == "{search_params["region"]}"')
+
+        # 简单等值字符串字段
+        simple_string_fields = [
+            'type', 'year_completion', 'transaction_ownership', 'parking_space_ratio',
+            'management_company', 'developer', 'decoration_style', 'decoration_status',
+            'water_electricity', 'has_elevator', 'has_parking', 'orientation',
+            'building_age', 'floor', 'rental_mode', 'payment_method'
+        ]
+        for f in simple_string_fields:
+            if search_params.get(f):
+                conditions.append(f'{f} == "{search_params[f]}"')
+
+        # 偏好与标签（LIKE 或包含）
+        if search_params.get('preferences_tags'):
+            conditions.append(f'preferences_tags like "%{search_params["preferences_tags"]}%"')
+
+        # 面积范围：max_area >= min && min_area <= max
         if search_params.get('area_range'):
-            area_range = search_params['area_range']
-            if area_range.get('min_area') is not None:
-                conditions.append(f'mj >= {area_range["min_area"]}')
-            if area_range.get('max_area') is not None:
-                conditions.append(f'mj <= {area_range["max_area"]}')
-        
-        # 统一的地理位置过滤
+            ar = search_params['area_range']
+            if ar.get('min_area') is not None:
+                conditions.append(f'max_area >= {ar["min_area"]}')
+            if ar.get('max_area') is not None:
+                conditions.append(f'min_area <= {ar["max_area"]}')
+
+        # 单价范围
+        if search_params.get('unit_price_range'):
+            upr = search_params['unit_price_range']
+            if upr.get('min_unit_price') is not None:
+                conditions.append(f'max_unit_price >= {upr["min_unit_price"]}')
+            if upr.get('max_unit_price') is not None:
+                conditions.append(f'min_unit_price <= {upr["max_unit_price"]}')
+
+        # 总价范围
+        if search_params.get('total_price_range'):
+            tpr = search_params['total_price_range']
+            if tpr.get('min_total_price') is not None:
+                conditions.append(f'max_total_price >= {tpr["min_total_price"]}')
+            if tpr.get('max_total_price') is not None:
+                conditions.append(f'min_total_price <= {tpr["max_total_price"]}')
+
+        # 租金范围
+        if search_params.get('rent_range'):
+            rr = search_params['rent_range']
+            if rr.get('min_rent') is not None:
+                conditions.append(f'rent >= {rr["min_rent"]}')
+            if rr.get('max_rent') is not None:
+                conditions.append(f'rent <= {rr["max_rent"]}')
+
+        # 产权年限
+        if search_params.get('property_right_duration_range'):
+            pr = search_params['property_right_duration_range']
+            if pr.get('min_years') is not None:
+                conditions.append(f'property_right_duration >= {pr["min_years"]}')
+            if pr.get('max_years') is not None:
+                conditions.append(f'property_right_duration <= {pr["max_years"]}')
+
+        # 绿化率/容积率/物业费范围
+        if search_params.get('greening_rate_range'):
+            gr = search_params['greening_rate_range']
+            if gr.get('min') is not None:
+                conditions.append(f'greening_rate >= {gr["min"]}')
+            if gr.get('max') is not None:
+                conditions.append(f'greening_rate <= {gr["max"]}')
+        if search_params.get('plot_ratio_range'):
+            prr = search_params['plot_ratio_range']
+            if prr.get('min') is not None:
+                conditions.append(f'plot_ratio >= {prr["min"]}')
+            if prr.get('max') is not None:
+                conditions.append(f'plot_ratio <= {prr["max"]}')
+        if search_params.get('management_fee_range'):
+            mfr = search_params['management_fee_range']
+            if mfr.get('min') is not None:
+                conditions.append(f'management_fee >= {mfr["min"]}')
+            if mfr.get('max') is not None:
+                conditions.append(f'management_fee <= {mfr["max"]}')
+
+        # 地理位置过滤
         if search_params.get('location'):
             location_filter = self._build_location_filter(search_params['location'])
             if location_filter:
                 conditions.append(location_filter)
-        
-        # 产权年限范围过滤
-        if search_params.get('cqnx_range'):
-            cqnx_range = search_params['cqnx_range']
-            if cqnx_range.get('min_years') is not None:
-                conditions.append(f'cqnx >= {cqnx_range["min_years"]}')
-            if cqnx_range.get('max_years') is not None:
-                conditions.append(f'cqnx <= {cqnx_range["max_years"]}')
-        
-        # 组合所有条件
-        if conditions:
-            return ' AND '.join(conditions)
-        else:
-            return None
+
+        return ' AND '.join(conditions) if conditions else None
     
     def _build_location_filter(self, location: Dict[str, Any]) -> Optional[str]:
         """
@@ -750,13 +730,13 @@ class HouseRecoService:
         conditions = []
         
         if location.get('min_longitude') is not None:
-            conditions.append(f'jd >= {location["min_longitude"]}')
+            conditions.append(f'longitude >= {location["min_longitude"]}')
         if location.get('max_longitude') is not None:
-            conditions.append(f'jd <= {location["max_longitude"]}')
+            conditions.append(f'longitude <= {location["max_longitude"]}')
         if location.get('min_latitude') is not None:
-            conditions.append(f'wd >= {location["min_latitude"]}')
+            conditions.append(f'latitude >= {location["min_latitude"]}')
         if location.get('max_latitude') is not None:
-            conditions.append(f'wd <= {location["max_latitude"]}')
+            conditions.append(f'latitude <= {location["max_latitude"]}')
         
         return f"({' AND '.join(conditions)})" if conditions else None
     
@@ -773,13 +753,13 @@ class HouseRecoService:
         conditions = []
         
         if location.get('min_jd') is not None:
-            conditions.append(f'jd >= {location["min_jd"]}')
+            conditions.append(f'longitude >= {location["min_jd"]}')
         if location.get('max_jd') is not None:
-            conditions.append(f'jd <= {location["max_jd"]}')
+            conditions.append(f'longitude <= {location["max_jd"]}')
         if location.get('min_wd') is not None:
-            conditions.append(f'wd >= {location["min_wd"]}')
+            conditions.append(f'latitude >= {location["min_wd"]}')
         if location.get('max_wd') is not None:
-            conditions.append(f'wd <= {location["max_wd"]}')
+            conditions.append(f'latitude <= {location["max_wd"]}')
         
         return f"({' AND '.join(conditions)})" if conditions else None
 
@@ -821,10 +801,10 @@ class HouseRecoService:
             
             # 构建边界框过滤条件
             conditions = [
-                f'wd >= {min_lat}',
-                f'wd <= {max_lat}',
-                f'jd >= {min_lng}',
-                f'jd <= {max_lng}'
+                f'latitude >= {min_lat}',
+                f'latitude <= {max_lat}',
+                f'longitude >= {min_lng}',
+                f'longitude <= {max_lng}'
             ]
             
             return f"({' AND '.join(conditions)})"
@@ -866,10 +846,10 @@ class HouseRecoService:
             # 计算精确距离并过滤
             filtered_results = []
             for house in results:
-                if house.get('jd') is not None and house.get('wd') is not None:
+                if house.get('longitude') is not None and house.get('latitude') is not None:
                     distance = self.calculate_distance_km(
                         center_lat, center_lng,
-                        house['wd'], house['jd']
+                        house['latitude'], house['longitude']
                     )
                     
                     # 只保留在半径范围内的房源
@@ -908,6 +888,7 @@ class HouseRecoService:
             
             # 注：semantic_weight参数预留用于未来的混合搜索权重调整功能
             # 当前版本直接使用语义搜索
+            _ = semantic_weight  # 标记参数已被考虑但暂未使用
             
             # 执行搜索
             results = self.search_houses(search_params, limit=limit)
@@ -1062,10 +1043,10 @@ class HouseRecoService:
             # 计算精确距离并过滤
             filtered_results = []
             for house in results:
-                if house.get('jd') is not None and house.get('wd') is not None:
+                if house.get('longitude') is not None and house.get('latitude') is not None:
                     distance = self.calculate_distance_km(
                         center_latitude, center_longitude,
-                        house['wd'], house['jd']
+                        house['latitude'], house['longitude']
                     )
                     
                     # 只保留在半径范围内的房源

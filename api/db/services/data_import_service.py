@@ -58,6 +58,7 @@ class DataImportService:
         '偏好': 'preferences_tags',  # 添加偏好字段映射
         '房源标签': 'property_tags',  # 添加房源标签字段映射
         '房源户型': 'property_type',  # 添加房源户型字段映射
+        '封面图': 'cover_url',  # 添加封面图字段映射
         '面积': 'area',  # 添加面积字段映射
         '单价': 'unit_price',  # 添加单价字段映射
         '总价': 'total_price',  # 添加总价字段映射

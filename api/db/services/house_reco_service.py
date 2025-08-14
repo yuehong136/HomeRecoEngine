@@ -114,6 +114,7 @@ class HouseRecoService:
         schema.add_field(field_name="payment_method", datatype=DataType.VARCHAR, max_length=50, description="付款方式")
         schema.add_field(field_name="lease_term", datatype=DataType.INT64, description="租期(月)")
         schema.add_field(field_name="preferences_tags", datatype=DataType.VARCHAR, max_length=1000, description="偏好与标签")
+        schema.add_field(field_name="cover_url", datatype=DataType.VARCHAR, max_length=500, description="房源封面图，用于前端展示，不用于检索")
         schema.add_field(field_name="semantic_str", datatype=DataType.VARCHAR, max_length=3000, description="语义字符", enable_analyzer=True, analyzer_params=analyzer_params)
         # 注意：删除了旧版字段（如 xqmc/qy/dz/jd/wd 等），仅保留新字段集合
         
@@ -410,7 +411,7 @@ class HouseRecoService:
             "management_fee","developer","greening_rate","plot_ratio","decoration_style",
             "decoration_status","water_electricity","has_elevator","has_parking",
             "orientation","building_age","furniture_facilities","floor","rental_mode",
-            "payment_method","lease_term","preferences_tags","semantic_str"
+            "payment_method","lease_term","preferences_tags","cover_url","semantic_str"
         ]
     
     def search_houses(self, search_params: Dict[str, Any], limit: int = 10, offset: int = 0) -> List[Dict[str, Any]]:

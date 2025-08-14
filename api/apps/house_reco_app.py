@@ -141,6 +141,7 @@ class HouseInsertRequest(BaseModel):
     payment_method: Optional[str] = None
     lease_term: Optional[int] = None
     preferences_tags: Optional[str] = None
+    cover_url: Optional[str] = Field(None, description="房源封面图，用于前端展示，不用于检索")
 
 
 class HouseResponse(BaseModel):
@@ -786,6 +787,7 @@ def insert_house(request: HouseInsertRequest) -> HouseResponse:
     | `payment_method`           | `str`    | 付款方式        | "押一付三"     |
     | `lease_term`               | `int`    | 租期            | 12            |
     | `preferences_tags`         | `str`    | 偏好标签        | "学区房,地铁房" |
+    | `cover_url`                | `str`    | 房源封面图      | "https://example.com/house.jpg" |
 
     ---
 
@@ -1563,6 +1565,7 @@ def get_house_detail(house_id: int) -> HouseResponse:
             "furniture_facilities": "全配置",
             "floor": "中楼层（10/30层）",
             "preferences_tags": "学区房,地铁房,商圈房",
+            "cover_url": "https://example.com/images/house_123456.jpg",
             "created_at": "2024-01-15T10:30:45Z",
             "updated_at": "2024-01-16T14:22:30Z"
         }

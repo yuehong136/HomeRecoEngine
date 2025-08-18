@@ -78,43 +78,43 @@ class HouseRecoService:
         schema.add_field(field_name="address", datatype=DataType.VARCHAR, max_length=300, description="地址")
 
         # 新字段：范围数值
-        schema.add_field(field_name="min_area", datatype=DataType.DOUBLE, description="最小面积")
-        schema.add_field(field_name="max_area", datatype=DataType.DOUBLE, description="最大面积")
-        schema.add_field(field_name="min_unit_price", datatype=DataType.DOUBLE, description="最小单价")
-        schema.add_field(field_name="max_unit_price", datatype=DataType.DOUBLE, description="最大单价")
-        schema.add_field(field_name="min_total_price", datatype=DataType.DOUBLE, description="最小总价")
-        schema.add_field(field_name="max_total_price", datatype=DataType.DOUBLE, description="最大总价")
-        schema.add_field(field_name="rent", datatype=DataType.DOUBLE, description="租金")
+        schema.add_field(field_name="min_area", datatype=DataType.DOUBLE, description="最小面积", nullable=True)
+        schema.add_field(field_name="max_area", datatype=DataType.DOUBLE, description="最大面积", nullable=True)
+        schema.add_field(field_name="min_unit_price", datatype=DataType.DOUBLE, description="最小单价", nullable=True)
+        schema.add_field(field_name="max_unit_price", datatype=DataType.DOUBLE, description="最大单价", nullable=True)
+        schema.add_field(field_name="min_total_price", datatype=DataType.DOUBLE, description="最小总价", nullable=True)
+        schema.add_field(field_name="max_total_price", datatype=DataType.DOUBLE, description="最大总价", nullable=True)
+        schema.add_field(field_name="rent", datatype=DataType.DOUBLE, description="租金", nullable=True)
 
         # 新字段：地理坐标
         schema.add_field(field_name="longitude", datatype=DataType.DOUBLE, description="经度")
         schema.add_field(field_name="latitude", datatype=DataType.DOUBLE, description="纬度")
 
         # 新字段：更多属性
-        schema.add_field(field_name="type", datatype=DataType.VARCHAR, max_length=50, description="房源类型")
-        schema.add_field(field_name="year_completion", datatype=DataType.VARCHAR, max_length=50, description="建成年代")
-        schema.add_field(field_name="transaction_ownership", datatype=DataType.VARCHAR, max_length=100, description="交易权属")
-        schema.add_field(field_name="property_right_duration", datatype=DataType.INT64, description="产权年限")
-        schema.add_field(field_name="parking_space_ratio", datatype=DataType.VARCHAR, max_length=50, description="车位比")
-        schema.add_field(field_name="management_company", datatype=DataType.VARCHAR, max_length=200, description="物业公司")
-        schema.add_field(field_name="management_fee", datatype=DataType.DOUBLE, description="物业费")
-        schema.add_field(field_name="developer", datatype=DataType.VARCHAR, max_length=200, description="开发商")
-        schema.add_field(field_name="greening_rate", datatype=DataType.DOUBLE, description="绿化率")
-        schema.add_field(field_name="plot_ratio", datatype=DataType.DOUBLE, description="容积率")
-        schema.add_field(field_name="decoration_style", datatype=DataType.VARCHAR, max_length=100, description="装修风格")
-        schema.add_field(field_name="decoration_status", datatype=DataType.VARCHAR, max_length=100, description="装修情况")
-        schema.add_field(field_name="water_electricity", datatype=DataType.VARCHAR, max_length=100, description="水电")
-        schema.add_field(field_name="has_elevator", datatype=DataType.VARCHAR, max_length=10, description="有无电梯")
-        schema.add_field(field_name="has_parking", datatype=DataType.VARCHAR, max_length=10, description="有无车位")
-        schema.add_field(field_name="orientation", datatype=DataType.VARCHAR, max_length=50, description="朝向")
-        schema.add_field(field_name="building_age", datatype=DataType.VARCHAR, max_length=50, description="房屋年限")
-        schema.add_field(field_name="furniture_facilities", datatype=DataType.VARCHAR, max_length=500, description="家具设施")
-        schema.add_field(field_name="floor", datatype=DataType.VARCHAR, max_length=50, description="楼层")
-        schema.add_field(field_name="rental_mode", datatype=DataType.VARCHAR, max_length=50, description="租赁模式")
-        schema.add_field(field_name="payment_method", datatype=DataType.VARCHAR, max_length=50, description="付款方式")
-        schema.add_field(field_name="lease_term", datatype=DataType.INT64, description="租期(月)")
-        schema.add_field(field_name="preferences_tags", datatype=DataType.VARCHAR, max_length=1000, description="偏好与标签")
-        schema.add_field(field_name="cover_url", datatype=DataType.VARCHAR, max_length=500, description="房源封面图，用于前端展示，不用于检索")
+        schema.add_field(field_name="type", datatype=DataType.VARCHAR, max_length=50, description="房源类型", nullable=True)
+        schema.add_field(field_name="year_completion", datatype=DataType.VARCHAR, max_length=50, description="建成年代", nullable=True)
+        schema.add_field(field_name="transaction_ownership", datatype=DataType.VARCHAR, max_length=100, description="交易权属", nullable=True)
+        schema.add_field(field_name="property_right_duration", datatype=DataType.INT64, description="产权年限", nullable=True)
+        schema.add_field(field_name="parking_space_ratio", datatype=DataType.VARCHAR, max_length=50, description="车位比", nullable=True)
+        schema.add_field(field_name="management_company", datatype=DataType.VARCHAR, max_length=200, description="物业公司", nullable=True)
+        schema.add_field(field_name="management_fee", datatype=DataType.DOUBLE, description="物业费", nullable=True)
+        schema.add_field(field_name="developer", datatype=DataType.VARCHAR, max_length=200, description="开发商", nullable=True)
+        schema.add_field(field_name="greening_rate", datatype=DataType.DOUBLE, description="绿化率", nullable=True)
+        schema.add_field(field_name="plot_ratio", datatype=DataType.DOUBLE, description="容积率", nullable=True)
+        schema.add_field(field_name="decoration_style", datatype=DataType.VARCHAR, max_length=100, description="装修风格", nullable=True)
+        schema.add_field(field_name="decoration_status", datatype=DataType.VARCHAR, max_length=100, description="装修情况", nullable=True)
+        schema.add_field(field_name="water_electricity", datatype=DataType.VARCHAR, max_length=100, description="水电", nullable=True)
+        schema.add_field(field_name="has_elevator", datatype=DataType.VARCHAR, max_length=10, description="有无电梯", nullable=True)
+        schema.add_field(field_name="has_parking", datatype=DataType.VARCHAR, max_length=10, description="有无车位", nullable=True)
+        schema.add_field(field_name="orientation", datatype=DataType.VARCHAR, max_length=50, description="朝向", nullable=True)
+        schema.add_field(field_name="building_age", datatype=DataType.VARCHAR, max_length=50, description="房屋年限", nullable=True)
+        schema.add_field(field_name="furniture_facilities", datatype=DataType.VARCHAR, max_length=500, description="家具设施", nullable=True)
+        schema.add_field(field_name="floor", datatype=DataType.VARCHAR, max_length=50, description="楼层", nullable=True)
+        schema.add_field(field_name="rental_mode", datatype=DataType.VARCHAR, max_length=50, description="租赁模式", nullable=True)
+        schema.add_field(field_name="payment_method", datatype=DataType.VARCHAR, max_length=50, description="付款方式", nullable=True)
+        schema.add_field(field_name="lease_term", datatype=DataType.INT64, description="租期(月)", nullable=True)
+        schema.add_field(field_name="preferences_tags", datatype=DataType.VARCHAR, max_length=1000, description="偏好与标签", nullable=True)
+        schema.add_field(field_name="cover_url", datatype=DataType.VARCHAR, max_length=500, description="房源封面图，用于前端展示，不用于检索", nullable=True)
         schema.add_field(field_name="semantic_str", datatype=DataType.VARCHAR, max_length=3000, description="语义字符", enable_analyzer=True, analyzer_params=analyzer_params)
         # 注意：删除了旧版字段（如 xqmc/qy/dz/jd/wd 等），仅保留新字段集合
         
@@ -293,7 +293,8 @@ class HouseRecoService:
                 'type', 'year_completion', 'transaction_ownership', 'parking_space_ratio',
                 'management_company', 'developer', 'decoration_style', 'decoration_status',
                 'water_electricity', 'has_elevator', 'has_parking', 'orientation', 'building_age',
-                'furniture_facilities', 'floor', 'rental_mode', 'payment_method', 'preferences_tags'
+                'furniture_facilities', 'floor', 'rental_mode', 'payment_method', 'preferences_tags',
+                'cover_url'
             ]:
                 processed_data[key] = as_str(house_data.get(key))
 

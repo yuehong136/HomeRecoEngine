@@ -442,6 +442,7 @@ def search_houses(request: HouseSearchRequest) -> HouseResponse:
         user_query_text = getattr(request, 'user_query_text', None)
         if user_query_text:
             search_params["user_query_text"] = user_query_text
+        has_semantic_query = bool(search_params.get("user_query_text") or search_params.get("semantic_str"))
 
         # 处理分类参数（允许单个或多个）
         categories: List[int] = []
@@ -467,12 +468,16 @@ def search_houses(request: HouseSearchRequest) -> HouseResponse:
                 except (TypeError, ValueError) as e:
                     logger.warning(f"结果序列化失败，跳过该条记录: {e}")
                     continue
+            if has_semantic_query:
+                total_count = len(safe_results)
+            else:
+                total_count = service.count_houses(search_params)
             return HouseResponse(
                 success=True,
                 message="搜索成功",
                 data={
                     "houses": safe_results,
-                    "total": len(safe_results),
+                    "total": total_count,
                     "limit": request.limit,
                     "offset": request.offset
                 }
@@ -481,6 +486,7 @@ def search_houses(request: HouseSearchRequest) -> HouseResponse:
         # 指定了分类：按分类逐个检索并分别返回
         results_by_category: Dict[str, List[Dict[str, Any]]] = {}
         all_results: List[Dict[str, Any]] = []
+        total_count = 0
         for cat in categories:
             cat_params = dict(search_params)
             cat_params["category"] = cat
@@ -501,6 +507,11 @@ def search_houses(request: HouseSearchRequest) -> HouseResponse:
                     continue
             results_by_category[str(cat)] = safe_cat_results
             all_results.extend(safe_cat_results)
+            if has_semantic_query:
+                cat_total = len(safe_cat_results)
+            else:
+                cat_total = service.count_houses(cat_params)
+            total_count += cat_total
 
         return HouseResponse(
             success=True,
@@ -508,7 +519,7 @@ def search_houses(request: HouseSearchRequest) -> HouseResponse:
             data={
                 "houses": all_results,
                 "houses_by_category": results_by_category,
-                "total": len(all_results),
+                "total": total_count,
                 "limit": request.limit,
                 "offset": request.offset
             }

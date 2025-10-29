@@ -574,6 +574,63 @@ class HouseRecoService:
         except Exception as e:
             logger.error(f"搜索房源失败: {e}")
             return []
+
+    def count_houses(self, search_params: Dict[str, Any]) -> int:
+        """计算符合过滤条件的房源总数（不受 limit/offset 影响）。"""
+        filter_expr = self._build_filter_expression(search_params)
+
+        try:
+            # 如果没有过滤条件，则返回集合总行数
+            if not filter_expr:
+                stats = self.client.get_collection_stats(self.COLLECTION_NAME)
+                return int(stats.get("row_count", 0))
+
+            # 优先尝试使用聚合计数
+            try:
+                count_result = self.client.query(
+                    collection_name=self.COLLECTION_NAME,
+                    filter=filter_expr,
+                    output_fields=["count(*)"],
+                )
+                if count_result and isinstance(count_result, list):
+                    first_row = count_result[0]
+                    # Milvus 可能返回诸如 "count(*)" 或 "_col0" 等字段名，统一识别
+                    for key, value in first_row.items():
+                        if key.lower().startswith("count"):
+                            return int(value)
+            except Exception as agg_err:
+                logger.debug("count(*) aggregation not available, fallback to iterator: %s", agg_err)
+
+            # 聚合计数不可用时，使用迭代器批量统计
+            batch_size = 2000
+            total = 0
+
+            if hasattr(self.client, "query_iterator"):
+                iterator = self.client.query_iterator(
+                    collection_name=self.COLLECTION_NAME,
+                    filter=filter_expr,
+                    output_fields=["id"],
+                    batch_size=batch_size,
+                )
+                for batch in iterator:
+                    total += len(batch)
+                return total
+
+            # 最后兜底：直接查询所有匹配条目并计数
+            fallback_results = self.client.query(
+                collection_name=self.COLLECTION_NAME,
+                filter=filter_expr,
+                output_fields=["id"],
+            )
+            return len(fallback_results)
+
+        except Exception as err:
+            logger.warning("统计房源总数失败，返回集合总行数作为兜底。错误: %s", err)
+            try:
+                stats = self.client.get_collection_stats(self.COLLECTION_NAME)
+                return int(stats.get("row_count", 0))
+            except Exception:
+                return 0
     
     def _build_filter_expression(self, search_params: Dict[str, Any]) -> Optional[str]:
         """根据新字段规范构建过滤表达式。"""
